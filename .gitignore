@@ -1,0 +1,9 @@
+.vscode/
+build/
+Camera/
+install/
+log/
+videos/
+CMakeCache.txt
+*.mp4
+*.avi
