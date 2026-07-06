@@ -17,21 +17,50 @@ find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_common REQUIRED)
+find_package(realsense2 REQUIRED)
+set(RS_DEPENDENCIES realsense2)
+find_package(OpenCV REQUIRED)
+
+
+include_directories(
+  include/${PROJECT_NAME}
+  include/${PROJECT_NAME}/devices/camera
+  ${OpenCV_INCLUDE_DIRS}
+)
+
+add_library(d435i-video-capture SHARED src/devices/camera/d435i_video_capture.cpp)
+list(APPEND DEMO_LIBS d435i-video-capture)
 
 # 接收目标位姿后调用 piper_no_gripper_moveit 进行 plan & execute 的节点
 add_executable(moveit_pose_goal_node src/moveit_pose_goal_node.cpp)
+set_target_properties(moveit_pose_goal_node PROPERTIES
+    BUILD_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN"
+)
 ament_target_dependencies(moveit_pose_goal_node
   rclcpp
   geometry_msgs
   moveit_ros_planning_interface
 )
-target_include_directories(moveit_pose_goal_node PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
+
+# D435i 图像测试节点
+add_executable(d435i_image_test src/test/d435i_image_test.cpp)
+set_target_properties(d435i_image_test PROPERTIES
+    BUILD_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN"
+)
+target_link_libraries(d435i_image_test
+  ${RS_DEPENDENCIES}
+  ${DEMO_LIBS}
+  ${OpenCV_LIBS}
 )
 
-install(TARGETS moveit_pose_goal_node
-  DESTINATION lib/${PROJECT_NAME})
+install(TARGETS
+  ${DEMO_LIBS}
+  moveit_pose_goal_node
+  d435i_image_test
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}

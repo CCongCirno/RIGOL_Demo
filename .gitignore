@@ -1,9 +1,13 @@
 .vscode/
 build/
-Camera/
 install/
 log/
-videos/
 CMakeCache.txt
-*.mp4
-*.avi
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
