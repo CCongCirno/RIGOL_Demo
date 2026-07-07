@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.8)
 project(rigol_demo)
 
+set(demo_msgs_DIR ${PROJECT_SOURCE_DIR}/../../install/demo_msgs/share/demo_msgs/cmake)
+set(piper_msgs_DIR ${PROJECT_SOURCE_DIR}/../../install/piper_msgs/share/piper_msgs/cmake)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -15,8 +18,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(demo_msgs REQUIRED)
+find_package(piper_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_common REQUIRED)
+find_package(moveit_core REQUIRED)
 find_package(realsense2 REQUIRED)
 set(RS_DEPENDENCIES realsense2)
 find_package(OpenCV REQUIRED)
@@ -32,15 +40,33 @@ add_library(d435i-video-capture SHARED src/devices/camera/d435i_video_capture.cp
 list(APPEND DEMO_LIBS d435i-video-capture)
 
 # 接收目标位姿后调用 piper_no_gripper_moveit 进行 plan & execute 的节点
-add_executable(moveit_pose_goal_node src/moveit_pose_goal_node.cpp)
+add_executable(moveit_pose_goal_node src/module/moveit_pose_goal_node.cpp)
 set_target_properties(moveit_pose_goal_node PROPERTIES
     BUILD_RPATH "$ORIGIN"
-    INSTALL_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN;$ORIGIN/../../../demo_msgs/lib;$ORIGIN/../../../piper_msgs/lib"
 )
 ament_target_dependencies(moveit_pose_goal_node
   rclcpp
   geometry_msgs
+  demo_msgs
   moveit_ros_planning_interface
+  moveit_core
+)
+
+# 订阅目标轨迹并通过 /target_pose(PoseStamped)控制 Piper 顺序运动
+# 由 moveit_pose_goal_node 接收 /target_pose 并调用 MoveIt 规划执行
+add_executable(piper_control_node src/module/piper_control_node.cpp)
+set_target_properties(piper_control_node PROPERTIES
+    BUILD_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN;$ORIGIN/../../../demo_msgs/lib;$ORIGIN/../../../piper_msgs/lib"
+)
+ament_target_dependencies(piper_control_node
+  rclcpp
+  geometry_msgs
+  tf2
+  tf2_geometry_msgs
+  demo_msgs
+  piper_msgs
 )
 
 # D435i 图像测试节点
@@ -58,6 +84,7 @@ target_link_libraries(d435i_image_test
 install(TARGETS
   ${DEMO_LIBS}
   moveit_pose_goal_node
+  piper_control_node
   d435i_image_test
   DESTINATION lib/${PROJECT_NAME}
 )
