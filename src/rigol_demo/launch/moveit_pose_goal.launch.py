@@ -1,11 +1,11 @@
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 
 
 def generate_launch_description():
@@ -19,10 +19,33 @@ def generate_launch_description():
     piper_single_launch = os.path.join(
         piper_share, 'launch', 'start_single_piper.launch.py')
 
+    # 设置 demo_msgs / piper_msgs 动态库路径,确保运行时能找到自定义消息库
+    demo_msgs_lib = os.path.join(get_package_prefix('demo_msgs'), 'lib')
+    piper_msgs_lib = os.path.join(get_package_prefix('piper_msgs'), 'lib')
+    ld_library_path = SetEnvironmentVariable(
+        name='LD_LIBRARY_PATH',
+        value=[
+            demo_msgs_lib,
+            os.pathsep,
+            piper_msgs_lib,
+            os.pathsep,
+            EnvironmentVariable('LD_LIBRARY_PATH', default_value=''),
+        ],
+    )
+
     # ===== 目标位姿节点参数 =====
     pose_topic_arg = DeclareLaunchArgument(
         'pose_topic', default_value='/target_pose',
-        description='接收目标位姿的话题(PoseStamped)')
+        description='接收目标位姿的话题(demo_msgs/PoseGoal:含位姿 + 规划模式)')
+
+    # ===== MoveIt 规划相关参数 =====
+    # 规划模式按目标动态切换:home pose 用 OMPL 自由路径,目标点之间用 Pilz LIN 直线
+    cartesian_speed_arg = DeclareLaunchArgument(
+        'cartesian_speed', default_value='0.1',
+        description='Cartesian speed (m/s) for linear motion between target points')
+    planning_time_arg = DeclareLaunchArgument(
+        'planning_time', default_value='5.0',
+        description='MoveIt planning time in seconds')
 
     # ===== piper 单臂节点参数(透传给 start_single_piper.launch.py)=====
     can_port_arg = DeclareLaunchArgument(
@@ -56,18 +79,21 @@ def generate_launch_description():
             'planning_group': 'arm',
             'end_effector_link': 'link6',
             'pose_topic': LaunchConfiguration('pose_topic'),
-            'planning_time': 5.0,
+            'planning_time': LaunchConfiguration('planning_time'),
             'goal_position_tolerance': 0.001,
             'goal_orientation_tolerance': 0.001,
             'plan_attempts': 5,
             'max_velocity_scaling_factor': LaunchConfiguration('max_velocity_scaling_factor'),
             'max_acceleration_scaling_factor': LaunchConfiguration('max_acceleration_scaling_factor'),
+            'cartesian_speed': LaunchConfiguration('cartesian_speed'),
         }],
     )
 
     return LaunchDescription([
         # 目标位姿节点参数
         pose_topic_arg,
+        cartesian_speed_arg,
+        planning_time_arg,
         max_velocity_scaling_factor_arg,
         max_acceleration_scaling_factor_arg,
         # piper 单臂节点参数
@@ -76,6 +102,8 @@ def generate_launch_description():
         gripper_exist_arg,
         gripper_val_mutiple_arg,
         log_level_arg,
+        # 环境变量
+        ld_library_path,
         # 启动 piper 单臂控制节点(硬件接口)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(piper_single_launch),
