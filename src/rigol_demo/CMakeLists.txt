@@ -40,10 +40,10 @@ add_library(d435i-video-capture SHARED src/devices/camera/d435i_video_capture.cp
 list(APPEND DEMO_LIBS d435i-video-capture)
 
 # 接收目标位姿后调用 piper_no_gripper_moveit 进行 plan & execute 的节点
-add_executable(moveit_pose_goal_node src/moveit_pose_goal_node.cpp)
+add_executable(moveit_pose_goal_node src/module/moveit_pose_goal_node.cpp)
 set_target_properties(moveit_pose_goal_node PROPERTIES
     BUILD_RPATH "$ORIGIN"
-    INSTALL_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN;$ORIGIN/../../../demo_msgs/lib;$ORIGIN/../../../piper_msgs/lib"
 )
 ament_target_dependencies(moveit_pose_goal_node
   rclcpp
