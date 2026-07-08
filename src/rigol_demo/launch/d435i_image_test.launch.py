@@ -1,9 +1,7 @@
-import os
-
-from ament_index_python.packages import get_package_prefix
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -18,23 +16,33 @@ def generate_launch_description():
     fps_arg = DeclareLaunchArgument(
         'fps', default_value='30', description='Camera frame rate')
 
-    executable_path = os.path.join(
-        get_package_prefix('rigol_demo'),
-        'lib',
-        'rigol_demo',
-        'd435i_image_test',
+    d435i_publisher_node = Node(
+        package='rigol_demo',
+        executable='d435i_data_publisher_node',
+        name='d435i_data_publisher_node',
+        output='screen',
+        parameters=[{
+            'color_width': LaunchConfiguration('color_width'),
+            'color_height': LaunchConfiguration('color_height'),
+            'depth_width': LaunchConfiguration('depth_width'),
+            'depth_height': LaunchConfiguration('depth_height'),
+            'fps': LaunchConfiguration('fps'),
+        }],
     )
 
-    d435i_test_process = ExecuteProcess(
-        cmd=[
-            executable_path,
-            PythonExpression(["'--color_width=' + str(", LaunchConfiguration('color_width'), ")"]),
-            PythonExpression(["'--color_height=' + str(", LaunchConfiguration('color_height'), ")"]),
-            PythonExpression(["'--depth_width=' + str(", LaunchConfiguration('depth_width'), ")"]),
-            PythonExpression(["'--depth_height=' + str(", LaunchConfiguration('depth_height'), ")"]),
-            PythonExpression(["'--fps=' + str(", LaunchConfiguration('fps'), ")"]),
-        ],
+    d435i_test_node = Node(
+        package='rigol_demo',
+        executable='d435i_image_test',
+        name='d435i_image_test',
         output='screen',
+        parameters=[{
+            'rgb_topic': '/camera/rgb/image_raw',
+            'depth_raw_topic': '/camera/depth/image_raw',
+            'depth_color_topic': '/camera/depth/image_color',
+            'camera_info_topic': '/camera/rgb/camera_info',
+            'rgb_window': 'D435i RGB',
+            'depth_window': 'D435i Depth (Pseudo Color)',
+        }],
     )
 
     return LaunchDescription([
@@ -43,5 +51,6 @@ def generate_launch_description():
         depth_width_arg,
         depth_height_arg,
         fps_arg,
-        d435i_test_process,
+        d435i_publisher_node,
+        d435i_test_node,
     ])
