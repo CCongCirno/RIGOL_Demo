@@ -17,6 +17,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -75,7 +76,26 @@ set_target_properties(d435i_image_test PROPERTIES
     BUILD_RPATH "$ORIGIN"
     INSTALL_RPATH "$ORIGIN"
 )
+ament_target_dependencies(d435i_image_test
+  rclcpp
+  sensor_msgs
+)
 target_link_libraries(d435i_image_test
+  ${RS_DEPENDENCIES}
+  ${DEMO_LIBS}
+  ${OpenCV_LIBS}
+)
+
+add_executable(d435i_data_publisher_node src/module/d435i_data_publisher_node.cpp)
+set_target_properties(d435i_data_publisher_node PROPERTIES
+    BUILD_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN"
+)
+ament_target_dependencies(d435i_data_publisher_node
+  rclcpp
+  sensor_msgs
+)
+target_link_libraries(d435i_data_publisher_node
   ${RS_DEPENDENCIES}
   ${DEMO_LIBS}
   ${OpenCV_LIBS}
@@ -86,6 +106,7 @@ install(TARGETS
   moveit_pose_goal_node
   piper_control_node
   d435i_image_test
+  d435i_data_publisher_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

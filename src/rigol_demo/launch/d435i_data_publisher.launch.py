@@ -1,3 +1,5 @@
+import os
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -30,21 +32,6 @@ def generate_launch_description():
         }],
     )
 
-    d435i_test_node = Node(
-        package='rigol_demo',
-        executable='d435i_image_test',
-        name='d435i_image_test',
-        output='screen',
-        parameters=[{
-            'rgb_topic': '/camera/rgb/image_raw',
-            'depth_raw_topic': '/camera/depth/image_raw',
-            'depth_color_topic': '/camera/depth/image_color',
-            'camera_info_topic': '/camera/rgb/camera_info',
-            'rgb_window': 'D435i RGB',
-            'depth_window': 'D435i Depth (Pseudo Color)',
-        }],
-    )
-
     return LaunchDescription([
         color_width_arg,
         color_height_arg,
@@ -52,5 +39,4 @@ def generate_launch_description():
         depth_height_arg,
         fps_arg,
         d435i_publisher_node,
-        d435i_test_node,
     ])
