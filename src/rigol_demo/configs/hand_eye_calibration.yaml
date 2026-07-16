@@ -1,0 +1,96 @@
+# ============================================================
+# 手眼标定配置文件 (眼在手上 / Eye-in-Hand)
+# 相机安装在机械臂末端,标定 camera_link -> link6 的变换
+#
+# 工作流程:
+#   预标定 (PREPARE):
+#     1. 按 'p' 进入预标定模式
+#     2. 手动拖动机械臂到不同位姿(确保棋盘格可见)
+#     3. 按 SPACE 采集当前关节角度(电机角度)
+#     4. 采集足够位姿后按 'e' 结束预标定
+#   正式标定 (CALIBRATION):
+#     1. 按 'c' 进入正式标定模式
+#     2. 节点自动加载预标定保存的关节角度,依次发布到 /joint_states
+#     3. 机器人到达每个位姿后自动检测棋盘格并采集图像
+#        同时通过 TF 获取 base_link -> link6 的变换
+#     4. 所有位姿采集完成后按 'r' 执行标定计算
+#     5. 标定结果保存到 configs/hand_eye_result.yaml
+# ============================================================
+
+# ---------- 话题配置 ----------
+# 与 d435i_data_publisher_node 发布的话题保持一致
+rgb_topic: "/camera/rgb/image_raw"
+camera_info_topic: "/camera/rgb/camera_info"
+
+# ---------- 机器人控制话题 ----------
+# 关节状态反馈话题 (piper_ctrl_single_node 发布, 读取电机角度)
+joint_state_topic: "/joint_states"
+# 机械臂状态话题
+arm_status_topic: "/arm_status"
+# 末端位姿反馈话题
+end_pose_topic: "/end_pose_stamped"
+# 目标位姿发布话题 (自由规划接口接收)
+pose_goal_topic: "/target_pose"
+# 规划模式: 0 = 自由路径(OMPL), 1 = 直线(Pilz LIN)
+planner_mode: 0
+# 机械臂使能接口配置
+enable_topic: "/enable_flag"
+enable_service: "enable_srv"
+enable_before_calibration: true
+
+# ---------- TF 配置 ----------
+# 用于获取 base_link -> link6 的变换(手眼标定计算需要)
+base_frame: "base_link"
+ee_frame: "link6"
+camera_frame: "camera_color_optical_frame"
+
+# ---------- 标定板配置 ----------
+# 棋盘格角点数(内角点,不含外边框)
+board_width: 11           # 列方向内角点数
+board_height: 8           # 行方向内角点数
+# 单个棋盘格边长(米)
+square_size: 0.020        # 20mm
+
+# ---------- 相机内参 ----------
+# 是否使用自定义内参(true 时使用下方内参,false 时从 camera_info 话题获取)
+use_custom_camera_matrix: false
+camera_matrix:
+  fx: 891.773183
+  fy: 893.753426
+  cx: 628.465114
+  cy: 353.375401
+
+# ---------- 采样配置 ----------
+# 最少需要的姿态数量(OpenCV calibrateHandEye 至少需要 3 组)
+min_samples: 5
+# 最大姿态数量
+max_samples: 20
+
+# ---------- 标定方法 ----------
+# OpenCV 手眼标定算法:
+#   0 = CALIB_HAND_EYE_TSAI        (Tsai-Lenz, 经典快速)
+#   1 = CALIB_HAND_EYE_PARK        (Park-Martin)
+#   2 = CALIB_HAND_EYE_HORAUD      (Horaud)
+#   3 = CALIB_HAND_EYE_ANDREFF     (Andreff)
+#   4 = CALIB_HAND_EYE_DANIILIDIS  (Daniilidis, 对偶四元数)
+hand_eye_method: 1
+
+# ---------- 运动控制参数 ----------
+# 到达位姿后的等待时间(秒),确保机器人稳定
+pose_wait_time: 5.0
+# 目标位姿参考坐标系
+target_frame: "base_link"
+
+# ---------- 结果保存 ----------
+# 标定结果保存路径(相对于 configs 目录)
+result_file: "hand_eye_result.yaml"
+# 预标定保存的机器人位姿文件
+robot_pose_file: "robot_pose.yaml"
+# 正式标定保存的标定数据文件
+calibration_data_file: "calibration_data.yaml"
+
+# ---------- 可视化配置 ----------
+# OpenCV 窗口名称
+window_name: "Hand-Eye Calibration"
+# 棋盘格检测时是否显示角点
+show_corners: true
