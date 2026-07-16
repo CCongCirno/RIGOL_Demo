@@ -11,3 +11,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.log
+# Hand-eye calibration runtime data
+src/rigol_demo/configs/calibration_data.yaml
+src/rigol_demo/configs/hand_eye_result.yaml
+src/rigol_demo/configs/robot_pose.yaml
+src/rigol_demo/configs/chessboard_*.jpg
+src/rigol_demo/configs/robot_transform.yaml

@@ -19,22 +19,28 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(demo_msgs REQUIRED)
 find_package(piper_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_common REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(realsense2 REQUIRED)
-set(RS_DEPENDENCIES realsense2)
 find_package(OpenCV REQUIRED)
-
+find_package(cv_bridge REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+set(RS_DEPENDENCIES realsense2)
 
 include_directories(
   include/${PROJECT_NAME}
   include/${PROJECT_NAME}/devices/camera
   ${OpenCV_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
 )
 
 add_library(d435i-video-capture SHARED src/devices/camera/d435i_video_capture.cpp)
@@ -101,16 +107,48 @@ target_link_libraries(d435i_data_publisher_node
   ${OpenCV_LIBS}
 )
 
+# 手眼标定节点 (眼在手上, 预标定 + 正式标定)
+add_executable(hand_eye_calibration_node src/module/hand_eye_calibration_node.cpp)
+set_target_properties(hand_eye_calibration_node PROPERTIES
+    BUILD_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN;$ORIGIN/../../../demo_msgs/lib;$ORIGIN/../../../piper_msgs/lib"
+)
+ament_target_dependencies(hand_eye_calibration_node
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  std_msgs
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+  demo_msgs
+  piper_msgs
+  cv_bridge
+  ament_index_cpp
+)
+target_include_directories(hand_eye_calibration_node PRIVATE
+  ${EIGEN3_INCLUDE_DIRS}
+)
+target_link_libraries(hand_eye_calibration_node
+  ${OpenCV_LIBS}
+  yaml-cpp
+)
+
 install(TARGETS
   ${DEMO_LIBS}
   moveit_pose_goal_node
   piper_control_node
   d435i_image_test
   d435i_data_publisher_node
+  hand_eye_calibration_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+  OPTIONAL)
+
+install(DIRECTORY configs
   DESTINATION share/${PROJECT_NAME}
   OPTIONAL)
 
