@@ -1,0 +1,12 @@
+# 请求相机节点将一组 2D 像素点反投影为相机坐标系下的 3D 点
+# 使用 RS_D435i::get3DPoint (基于 librealsense 的 rs2_deproject_pixel_to_point)
+#
+# 像素坐标 (u, v) 对应相机 RGB 图像坐标系
+geometry_msgs/Point[] pixels
+---
+# 反投影得到的相机坐标系 3D 点 (单位: 米)
+# 相机坐标系: x 向右, y 向下, z 向前
+# 若某像素深度无效,对应点为 (0, 0, 0)
+geometry_msgs/Point[] points
+# 成功反投影的点数 (深度有效且非零的点)
+uint32 valid_count
