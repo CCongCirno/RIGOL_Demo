@@ -28,6 +28,12 @@ def generate_launch_description():
         'settle_time', default_value='0.5', description='Settle time after each target is reached')
     arrival_ignore_time_arg = DeclareLaunchArgument(
         'arrival_ignore_time', default_value='0.3', description='Ignore stale arrived status for this duration')
+    batch_mode_arg = DeclareLaunchArgument(
+        'batch_mode', default_value='true',
+        description='Batch mode: merge whole track into one Cartesian trajectory (no per-point pause)')
+    batch_move_timeout_arg = DeclareLaunchArgument(
+        'batch_move_timeout', default_value='60.0',
+        description='Timeout for batch trajectory execution in seconds')
     gripper_arg = DeclareLaunchArgument(
         'gripper', default_value='0.0', description='Gripper command value')
     mode1_arg = DeclareLaunchArgument(
@@ -102,6 +108,8 @@ def generate_launch_description():
             'move_timeout': LaunchConfiguration('move_timeout'),
             'settle_time': LaunchConfiguration('settle_time'),
             'arrival_ignore_time': LaunchConfiguration('arrival_ignore_time'),
+            'batch_mode': LaunchConfiguration('batch_mode'),
+            'batch_move_timeout': LaunchConfiguration('batch_move_timeout'),
             'gripper': LaunchConfiguration('gripper'),
             'mode1': LaunchConfiguration('mode1'),
             'mode2': LaunchConfiguration('mode2'),
@@ -140,6 +148,8 @@ def generate_launch_description():
         move_timeout_arg,
         settle_time_arg,
         arrival_ignore_time_arg,
+        batch_mode_arg,
+        batch_move_timeout_arg,
         gripper_arg,
         mode1_arg,
         mode2_arg,
