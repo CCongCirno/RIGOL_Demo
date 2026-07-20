@@ -349,6 +349,66 @@ private:
             if (yaml["enable_topic"]) config_.enable_topic = yaml["enable_topic"].as<std::string>();
             if (yaml["enable_service"]) config_.enable_service = yaml["enable_service"].as<std::string>();
             if (yaml["enable_before_calibration"]) config_.enable_before_calibration = yaml["enable_before_calibration"].as<bool>();
+            if (yaml["base_frame"]) config_.base_frame = yaml["base_frame"].as<std::string>();
+            if (yaml["ee_frame"]) config_.ee_frame = yaml["ee_frame"].as<std::string>();
+            if (yaml["camera_frame"]) config_.camera_frame = yaml["camera_frame"].as<std::string>();
+            if (yaml["board_width"]) config_.board_width = yaml["board_width"].as<int>();
+            if (yaml["board_height"]) config_.board_height = yaml["board_height"].as<int>();
+            if (yaml["square_size"]) config_.square_size = yaml["square_size"].as<double>();
+            if (yaml["use_custom_camera_matrix"]) config_.use_custom_camera_matrix = yaml["use_custom_camera_matrix"].as<bool>();
+            // 相机内参 (嵌套在 camera_matrix 下)
+            if (yaml["camera_matrix"])
+            {
+                YAML::Node cm = yaml["camera_matrix"];
+                if (cm["fx"]) config_.fx = cm["fx"].as<double>();
+                if (cm["fy"]) config_.fy = cm["fy"].as<double>();
+                if (cm["cx"]) config_.cx = cm["cx"].as<double>();
+                if (cm["cy"]) config_.cy = cm["cy"].as<double>();
+            }
+            if (yaml["min_samples"]) config_.min_samples = yaml["min_samples"].as<int>();
+            if (yaml["max_samples"]) config_.max_samples = yaml["max_samples"].as<int>();
+            if (yaml["hand_eye_method"]) config_.hand_eye_method = yaml["hand_eye_method"].as<int>();
+            if (yaml["pose_wait_time"]) config_.pose_wait_time = yaml["pose_wait_time"].as<double>();
+            if (yaml["target_frame"]) config_.target_frame = yaml["target_frame"].as<std::string>();
+            if (yaml["result_file"]) config_.result_file = yaml["result_file"].as<std::string>();
+            if (yaml["robot_pose_file"]) config_.robot_pose_file = yaml["robot_pose_file"].as<std::string>();
+            if (yaml["calibration_data_file"]) config_.calibration_data_file = yaml["calibration_data_file"].as<std::string>();
+            if (yaml["window_name"]) config_.window_name = yaml["window_name"].as<std::string>();
+            if (yaml["show_corners"]) config_.show_corners = yaml["show_corners"].as<bool>();
+
+            // 将 YAML 加载的值同步到 ROS2 参数,使后续 get_parameter 能取到 YAML 值
+            // (否则 get_parameter 返回 declare_parameter 的默认值,覆盖 YAML)
+            set_parameter(rclcpp::Parameter("rgb_topic", config_.rgb_topic));
+            set_parameter(rclcpp::Parameter("camera_info_topic", config_.camera_info_topic));
+            set_parameter(rclcpp::Parameter("joint_state_topic", config_.joint_state_topic));
+            set_parameter(rclcpp::Parameter("arm_status_topic", config_.arm_status_topic));
+            set_parameter(rclcpp::Parameter("end_pose_topic", config_.end_pose_topic));
+            set_parameter(rclcpp::Parameter("pose_goal_topic", config_.pose_goal_topic));
+            set_parameter(rclcpp::Parameter("planner_mode", config_.planner_mode));
+            set_parameter(rclcpp::Parameter("enable_topic", config_.enable_topic));
+            set_parameter(rclcpp::Parameter("enable_service", config_.enable_service));
+            set_parameter(rclcpp::Parameter("enable_before_calibration", config_.enable_before_calibration));
+            set_parameter(rclcpp::Parameter("base_frame", config_.base_frame));
+            set_parameter(rclcpp::Parameter("ee_frame", config_.ee_frame));
+            set_parameter(rclcpp::Parameter("camera_frame", config_.camera_frame));
+            set_parameter(rclcpp::Parameter("board_width", config_.board_width));
+            set_parameter(rclcpp::Parameter("board_height", config_.board_height));
+            set_parameter(rclcpp::Parameter("square_size", config_.square_size));
+            set_parameter(rclcpp::Parameter("use_custom_camera_matrix", config_.use_custom_camera_matrix));
+            set_parameter(rclcpp::Parameter("fx", config_.fx));
+            set_parameter(rclcpp::Parameter("fy", config_.fy));
+            set_parameter(rclcpp::Parameter("cx", config_.cx));
+            set_parameter(rclcpp::Parameter("cy", config_.cy));
+            set_parameter(rclcpp::Parameter("min_samples", config_.min_samples));
+            set_parameter(rclcpp::Parameter("max_samples", config_.max_samples));
+            set_parameter(rclcpp::Parameter("hand_eye_method", config_.hand_eye_method));
+            set_parameter(rclcpp::Parameter("pose_wait_time", config_.pose_wait_time));
+            set_parameter(rclcpp::Parameter("target_frame", config_.target_frame));
+            set_parameter(rclcpp::Parameter("result_file", config_.result_file));
+            set_parameter(rclcpp::Parameter("robot_pose_file", config_.robot_pose_file));
+            set_parameter(rclcpp::Parameter("calibration_data_file", config_.calibration_data_file));
+            set_parameter(rclcpp::Parameter("window_name", config_.window_name));
+            set_parameter(rclcpp::Parameter("show_corners", config_.show_corners));
         }
 
         config_.rgb_topic = get_parameter("rgb_topic").as_string();
@@ -751,9 +811,12 @@ private:
                 auto request = std::make_shared<piper_msgs::srv::Enable::Request>();
                 request->enable_request = enable;
                 auto result_future = enable_srv_client_->async_send_request(request);
-                auto status = rclcpp::spin_until_future_complete(
-                    this->get_node_base_interface(), result_future, std::chrono::seconds(2));
-                if (status == rclcpp::FutureReturnCode::SUCCESS)
+                // 节点已在 spin_thread 中由 rclcpp::spin 持续处理回调,
+                // 不能再使用 rclcpp::spin_until_future_complete (会导致
+                // "Node has already been added to an executor" 崩溃),
+                // 这里直接轮询 future 状态即可。
+                auto wait_status = result_future.wait_for(std::chrono::seconds(2));
+                if (wait_status == std::future_status::ready)
                 {
                     if (result_future.get()->enable_response)
                     {
@@ -1264,6 +1327,121 @@ private:
                 if (j < 3) oss << ", ";
             }
             RCLCPP_INFO(get_logger(), "第%d行: %s", i + 1, oss.str().c_str());
+        }
+        RCLCPP_INFO(get_logger(), "==================================");
+
+        // 验证标定结果: 检查各样本算出的标定板在 base 系下的位姿一致性
+        validateHandEyeResult();
+    }
+
+    // ---------- 验证手眼标定结果 ----------
+    // 原理: 标定板在 base 坐标系下的位姿是固定的
+    //   T_base_target = T_gripper2base * T_cam2gripper * T_target2cam
+    // 用每组样本计算 T_base_target, 检查它们之间的差异 (平移误差 + 旋转误差)
+    // 若标定正确, 各样本的 T_base_target 应高度一致
+    void validateHandEyeResult()
+    {
+        size_t n = robot_to_gripper_.size();
+        if (n < 2 || camera_to_target_.size() != n)
+        {
+            RCLCPP_WARN(get_logger(), "样本不足或数量不匹配,无法验证");
+            return;
+        }
+
+        // 用每组样本计算标定板在 base 系下的位姿
+        std::vector<cv::Mat> T_base_target_list;
+        for (size_t i = 0; i < n; ++i)
+        {
+            // T_base_target = T_gripper2base * T_cam2gripper * T_target2cam
+            cv::Mat T = robot_to_gripper_[i] * hand_eye_transform_ * camera_to_target_[i];
+            T_base_target_list.push_back(T);
+        }
+
+        // 计算各样本 T_base_target 与均值的差异
+        // 1. 平移均值
+        cv::Mat t_mean = cv::Mat::zeros(3, 1, CV_64F);
+        for (const auto &T : T_base_target_list)
+        {
+            t_mean += T(cv::Rect(3, 0, 1, 3));
+        }
+        t_mean /= static_cast<double>(n);
+
+        // 2. 旋转均值 (用四元数平均的简化版: 先转四元数,取第一个为参考,其余对齐后平均)
+        std::vector<Eigen::Quaterniond> quats;
+        for (const auto &T : T_base_target_list)
+        {
+            Eigen::Matrix3d R_eig;
+            for (int r = 0; r < 3; ++r)
+                for (int c = 0; c < 3; ++c)
+                    R_eig(r, c) = T.at<double>(r, c);
+            Eigen::Quaterniond q(R_eig);
+            q.normalize();
+            // 保证四元数在同一半球
+            if (quats.empty() || q.dot(quats[0]) >= 0)
+                quats.push_back(q);
+            else
+                quats.push_back(Eigen::Quaterniond(-q.w(), -q.x(), -q.y(), -q.z()));
+        }
+        Eigen::Quaterniond q_mean = quats[0];
+        for (size_t i = 1; i < quats.size(); ++i)
+        {
+            // 简化平均: 累加后归一化
+            q_mean = Eigen::Quaterniond(
+                q_mean.w() + quats[i].w(),
+                q_mean.x() + quats[i].x(),
+                q_mean.y() + quats[i].y(),
+                q_mean.z() + quats[i].z());
+            q_mean.normalize();
+        }
+
+        // 3. 计算各样本与均值的误差
+        double max_t_err = 0.0, avg_t_err = 0.0;
+        double max_r_err = 0.0, avg_r_err = 0.0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            // 平移误差 (米)
+            cv::Mat t_diff = T_base_target_list[i](cv::Rect(3, 0, 1, 3)) - t_mean;
+            double t_err = cv::norm(t_diff);
+            avg_t_err += t_err;
+            max_t_err = std::max(max_t_err, t_err);
+
+            // 旋转误差 (度): 四元数夹角
+            Eigen::Quaterniond q_i = quats[i];
+            double dot = std::abs(q_i.dot(q_mean));
+            dot = std::min(1.0, std::max(-1.0, dot));
+            double r_err = 2.0 * std::acos(dot) * 180.0 / CV_PI;
+            avg_r_err += r_err;
+            max_r_err = std::max(max_r_err, r_err);
+        }
+        avg_t_err /= static_cast<double>(n);
+        avg_r_err /= static_cast<double>(n);
+
+        RCLCPP_INFO(get_logger(), "========== 手眼标定验证 ==========");
+        RCLCPP_INFO(get_logger(), "标定板在 base 系下位姿一致性 (各样本与均值差异):");
+        RCLCPP_INFO(get_logger(), "  平移误差: 平均 %.4f mm, 最大 %.4f mm",
+                    avg_t_err * 1000.0, max_t_err * 1000.0);
+        RCLCPP_INFO(get_logger(), "  旋转误差: 平均 %.4f deg, 最大 %.4f deg",
+                    avg_r_err, max_r_err);
+        RCLCPP_INFO(get_logger(), "标定板在 base 系下位置(均值): (%.4f, %.4f, %.4f) m",
+                    t_mean.at<double>(0), t_mean.at<double>(1), t_mean.at<double>(2));
+
+        // 误差评估
+        if (max_t_err < 0.005 && max_r_err < 1.0)
+        {
+            RCLCPP_INFO(get_logger(), "✓ 标定质量优秀 (平移<5mm, 旋转<1°)");
+        }
+        else if (max_t_err < 0.015 && max_r_err < 3.0)
+        {
+            RCLCPP_INFO(get_logger(), "○ 标定质量良好 (平移<15mm, 旋转<3°)");
+        }
+        else if (max_t_err < 0.030 && max_r_err < 5.0)
+        {
+            RCLCPP_WARN(get_logger(), "△ 标定质量一般 (平移<30mm, 旋转<5°),建议增加样本或检查数据");
+        }
+        else
+        {
+            RCLCPP_ERROR(get_logger(), "✗ 标定质量差 (平移>30mm 或 旋转>5°),建议重新标定!");
+            RCLCPP_ERROR(get_logger(), "  可能原因: 1)样本位姿变化不足 2)棋盘格检测不准 3)TF 时间不同步 4)内参误差大");
         }
         RCLCPP_INFO(get_logger(), "==================================");
     }
