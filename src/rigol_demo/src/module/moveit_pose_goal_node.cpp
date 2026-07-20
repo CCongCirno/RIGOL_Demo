@@ -13,6 +13,8 @@
 #include "demo_msgs/msg/pose_goal.hpp"
 #include "moveit/move_group_interface/move_group_interface.h"
 #include "moveit_msgs/msg/robot_trajectory.hpp"
+#include "moveit_msgs/msg/constraints.hpp"
+#include "moveit_msgs/msg/orientation_constraint.hpp"
 #include "moveit/robot_trajectory/robot_trajectory.h"
 #include "moveit/trajectory_processing/iterative_time_parameterization.h"
 
@@ -118,12 +120,14 @@ private:
         cv_.notify_one();
         RCLCPP_INFO(
             this->get_logger(),
-            "收到目标位姿 | frame=%s | mode=%s | pos=(%.3f, %.3f, %.3f) | quat=(%.3f, %.3f, %.3f, %.3f)",
+            "收到目标位姿 | frame=%s | mode=%s | pos=(%.3f, %.3f, %.3f) | quat=(%.3f, %.3f, %.3f, %.3f) | waypoints=%zu",
             target_goal_.pose.header.frame_id.c_str(),
-            target_goal_.planner_mode == 1 ? "LIN(直线)" : "OMPL(自由)",
+            target_goal_.planner_mode == 2 ? "BATCH(批量直线)" :
+            (target_goal_.planner_mode == 1 ? "LIN(直线)" : "OMPL(自由)"),
             target_goal_.pose.pose.position.x, target_goal_.pose.pose.position.y, target_goal_.pose.pose.position.z,
             target_goal_.pose.pose.orientation.x, target_goal_.pose.pose.orientation.y,
-            target_goal_.pose.pose.orientation.z, target_goal_.pose.pose.orientation.w);
+            target_goal_.pose.pose.orientation.z, target_goal_.pose.pose.orientation.w,
+            target_goal_.waypoints.size());
     }
 
     // 规划执行循环:从队列取出最新目标并执行
@@ -164,14 +168,67 @@ private:
         }
 
         // 根据目标的 planner_mode 动态切换规划方式
-        //   mode=1 → computeCartesianPath(笛卡尔直线,用于目标点之间)
         //   mode=0 → OMPL RRTConnect(自由路径,用于回 home / 从 home 出发)
+        //   mode=1 → computeCartesianPath 单段直线(两点之间)
+        //   mode=2 → computeCartesianPath 多段直线(整条轨迹,从当前位姿依次经过所有 waypoints)
         const bool use_linear = (goal.planner_mode == 1);
+        const bool use_batch  = (goal.planner_mode == 2);
 
         auto start_time = this->now();
         moveit::core::MoveItErrorCode exec_result;
 
-        if (use_linear)
+        if (use_batch)
+        {
+            // ===== 批量笛卡尔直线规划(整条轨迹一次执行)=====
+            // 从当前位姿开始,依次直线经过 goal.waypoints 中的所有点。
+            // 仅规划/执行一次,避免逐点规划造成的卡顿。
+            move_group_->setStartStateToCurrentState();
+
+            geometry_msgs::msg::Pose start_pose = move_group_->getCurrentPose().pose;
+            std::vector<geometry_msgs::msg::Pose> waypoints;
+            waypoints.reserve(goal.waypoints.size() + 1);
+            waypoints.push_back(start_pose);  // 起点 = 当前位姿
+            for (const auto & wp : goal.waypoints) {
+                waypoints.push_back(wp);
+            }
+
+            moveit_msgs::msg::RobotTrajectory trajectory;
+            const double eef_step = 0.005;          // 末端步长 5mm(批量轨迹更密集,保证平滑)
+            const double jump_threshold = 0.0;     // 0 表示禁用跳变检测
+            double fraction = move_group_->computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+
+            double plan_duration = (this->now() - start_time).seconds();
+
+            if (fraction < 0.9)
+            {
+                RCLCPP_ERROR(this->get_logger(),
+                    "批量笛卡尔轨迹规划失败 (覆盖率: %.1f%% < 90%%),耗时 %.3f s, waypoints=%zu",
+                    fraction * 100.0, plan_duration, goal.waypoints.size());
+                move_group_->clearPoseTargets();
+                return;
+            }
+
+            // 手动添加时间参数化(computeCartesianPath 不带时间)
+            robot_trajectory::RobotTrajectory rt(move_group_->getRobotModel(), planning_group_);
+            rt.setRobotTrajectoryMsg(*move_group_->getCurrentState(), trajectory);
+
+            trajectory_processing::IterativeParabolicTimeParameterization iptp;
+            bool time_param_ok = iptp.computeTimeStamps(rt, max_velocity_scaling_factor_, max_acceleration_scaling_factor_);
+            if (!time_param_ok)
+            {
+                RCLCPP_WARN(this->get_logger(), "批量轨迹时间参数化失败,使用原始轨迹");
+            }
+            rt.getRobotTrajectoryMsg(trajectory);
+
+            RCLCPP_INFO(this->get_logger(),
+                "批量笛卡尔轨迹规划成功,覆盖率: %.1f%%,耗时 %.3f s,轨迹点数: %zu,waypoints: %zu,开始执行...",
+                fraction * 100.0, plan_duration, trajectory.joint_trajectory.points.size(), goal.waypoints.size());
+
+            moveit::planning_interface::MoveGroupInterface::Plan plan;
+            plan.trajectory_ = trajectory;
+            exec_result = move_group_->execute(plan);
+        }
+        else if (use_linear)
         {
             // ===== 笛卡尔直线规划(computeCartesianPath)=====
             // Pilz LIN 是完整规划管道;computeCartesianPath 是基于 IK 的路径采样,
@@ -226,11 +283,65 @@ private:
             // ===== OMPL 自由路径规划 =====
             move_group_->setPlanningPipelineId("ompl");
             move_group_->setPlannerId("RRTConnect");
+
+            // 判断是否为 home pose(home pose 固定不变,不加路径约束)
+            // home pose: pos=(0.048, 0.000, 0.250), quat≈(0, 0.707, 0, 0.707)
+            const auto & p = pose_stamped.pose.position;
+            const auto & q = pose_stamped.pose.orientation;
+            const bool is_home_pose =
+                std::abs(p.x - 0.048) < 0.01 &&
+                std::abs(p.y - 0.000) < 0.01 &&
+                std::abs(p.z - 0.250) < 0.01 &&
+                std::abs(q.x - 0.000) < 0.01 &&
+                std::abs(q.y - 0.707) < 0.01 &&
+                std::abs(q.z - 0.000) < 0.01 &&
+                std::abs(q.w - 0.707) < 0.01;
+
+            // 保存原始 tolerance,规划后恢复
+            const double orig_orientation_tol = goal_orientation_tolerance_;
+
+            if (!is_home_pose)
+            {
+                // 非 home(轨迹起点):允许末端绕 joint6 轴(末端工具 Z 轴)自由旋转,
+                // 只要末端 Z 轴方向(垂直屏幕)不变即可。
+                // 实现:设置路径约束(OrientationConstraint 锁定末端 Z 轴方向),
+                //       同时放宽 goal_orientation_tolerance 到 π(允许绕 Z 轴任意旋转)。
+                //       这样 OMPL 会在保持末端 Z 轴方向的前提下自由搜索绕 Z 轴的旋转,
+                //       大幅增加可求解姿态,避免 "Unable to sample any valid states" 错误。
+                moveit_msgs::msg::OrientationConstraint oc;
+                oc.link_name = end_effector_link_;
+                oc.header.frame_id = pose_stamped.header.frame_id;
+                oc.orientation = pose_stamped.pose.orientation;  // 目标姿态(末端 Z 轴方向)
+                // 仅约束 X/Y 轴方向(等价于锁定 Z 轴方向),允许绕 Z 轴自由旋转
+                // absolute_x/y_tolerance 放宽到 0.2(~11.5°),允许起始状态与目标有偏差时仍可规划
+                oc.absolute_x_axis_tolerance = 0.2;   // ~11.5° 锁定 X 轴方向
+                oc.absolute_y_axis_tolerance = 0.2;   // ~11.5° 锁定 Y 轴方向
+                oc.absolute_z_axis_tolerance = 2.0 * M_PI;  // 允许绕 Z 轴任意旋转
+                oc.weight = 1.0;
+
+                moveit_msgs::msg::Constraints path_constraints;
+                path_constraints.orientation_constraints.push_back(oc);
+                path_constraints.name = "keep_end_z_axis";
+                move_group_->setPathConstraints(path_constraints);
+
+                // 放宽目标姿态容差:允许绕 Z 轴任意旋转(只要末端 Z 轴方向正确)
+                move_group_->setGoalOrientationTolerance(2.0 * M_PI);
+                RCLCPP_INFO(this->get_logger(), "非 home 目标:启用末端 Z 轴方向约束 + 绕 Z 自由旋转");
+            }
+            else
+            {
+                RCLCPP_INFO(this->get_logger(), "home pose:使用标准 OMPL 规划(无路径约束)");
+            }
+
             move_group_->setPoseTarget(pose_stamped.pose);
 
             moveit::planning_interface::MoveGroupInterface::Plan plan;
             moveit::core::MoveItErrorCode plan_result = move_group_->plan(plan);
             double plan_duration = (this->now() - start_time).seconds();
+
+            // 恢复原始 tolerance 和清除路径约束
+            move_group_->setGoalOrientationTolerance(orig_orientation_tol);
+            move_group_->clearPathConstraints();
 
             if (plan_result != moveit::core::MoveItErrorCode::SUCCESS)
             {
@@ -242,7 +353,8 @@ private:
             }
 
             RCLCPP_INFO(this->get_logger(),
-                "自由(OMPL)规划成功,耗时 %.3f s,轨迹点数: %zu,开始执行...",
+                "自由(OMPL)规划成功%s,耗时 %.3f s,轨迹点数: %zu,开始执行...",
+                is_home_pose ? "(home)" : "(末端 Z 轴方向约束 + 绕 Z 自由旋转)",
                 plan_duration, plan.trajectory_.joint_trajectory.points.size());
 
             exec_result = move_group_->execute(plan);

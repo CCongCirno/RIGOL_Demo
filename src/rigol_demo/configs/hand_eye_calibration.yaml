@@ -49,16 +49,16 @@ camera_frame: "camera_color_optical_frame"
 board_width: 11           # 列方向内角点数
 board_height: 8           # 行方向内角点数
 # 单个棋盘格边长(米)
-square_size: 0.020        # 20mm
+square_size: 0.030        # 20mm
 
 # ---------- 相机内参 ----------
 # 是否使用自定义内参(true 时使用下方内参,false 时从 camera_info 话题获取)
-use_custom_camera_matrix: false
+use_custom_camera_matrix: true
 camera_matrix:
-  fx: 891.773183
-  fy: 893.753426
-  cx: 628.465114
-  cy: 353.375401
+  fx: 904.828258
+  fy: 903.437855
+  cx: 642.233283
+  cy: 353.013553
 
 # ---------- 采样配置 ----------
 # 最少需要的姿态数量(OpenCV calibrateHandEye 至少需要 3 组)

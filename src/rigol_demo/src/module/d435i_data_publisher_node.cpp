@@ -4,6 +4,7 @@
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <mutex>
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
@@ -12,6 +13,7 @@
 #include "opencv2/opencv.hpp"
 
 #include "devices/camera/d435i_video_capture.hpp"
+#include "demo_msgs/srv/get3_d_points.hpp"
 
 using namespace std::chrono_literals;
 
@@ -32,6 +34,7 @@ public:
     declare_parameter<std::string>("color_camera_info_topic", "/camera/rgb/camera_info");
     declare_parameter<std::string>("color_frame_id", "camera_color_optical_frame");
     declare_parameter<std::string>("depth_frame_id", "camera_depth_optical_frame");
+    declare_parameter<std::string>("get_3d_points_service", "/camera/get_3d_points");
 
     color_width_ = get_parameter("color_width").as_int();
     color_height_ = get_parameter("color_height").as_int();
@@ -44,11 +47,18 @@ public:
     color_camera_info_topic_ = get_parameter("color_camera_info_topic").as_string();
     color_frame_id_ = get_parameter("color_frame_id").as_string();
     depth_frame_id_ = get_parameter("depth_frame_id").as_string();
+    get_3d_points_service_ = get_parameter("get_3d_points_service").as_string();
 
     rgb_pub_ = create_publisher<sensor_msgs::msg::Image>(rgb_topic_, 10);
     depth_pub_ = create_publisher<sensor_msgs::msg::Image>(depth_topic_, 10);
     depth_color_pub_ = create_publisher<sensor_msgs::msg::Image>(depth_color_topic_, 10);
     color_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(color_camera_info_topic_, 10);
+
+    // 3D 点反投影服务:使用 RS_D435i::get3DPoint (基于 librealsense)
+    get_3d_points_srv_ = create_service<demo_msgs::srv::Get3DPoints>(
+        get_3d_points_service_,
+        std::bind(&D435IDataPublisherNode::handleGet3DPoints, this,
+                  std::placeholders::_1, std::placeholders::_2));
 
     RCLCPP_INFO(get_logger(), "D435i data publisher node created.");
   }
@@ -66,13 +76,53 @@ public:
     {
       camera_thread_.join();
     }
+    std::lock_guard<std::mutex> lock(camera_mutex_);
+    camera_ = nullptr;
+    latest_depth_frame_ = rs2::depth_frame(nullptr);
   }
 
 private:
+  // 3D 点反投影服务回调:使用 RS_D435i::get3DPoint
+  void handleGet3DPoints(
+      const std::shared_ptr<demo_msgs::srv::Get3DPoints::Request> request,
+      std::shared_ptr<demo_msgs::srv::Get3DPoints::Response> response)
+  {
+    std::lock_guard<std::mutex> lock(camera_mutex_);
+    if (camera_ == nullptr || !latest_depth_frame_)
+    {
+      RCLCPP_WARN(get_logger(), "相机未就绪或深度帧无效,无法反投影 3D 点");
+      response->valid_count = 0;
+      return;
+    }
+
+    uint32_t valid = 0;
+    response->points.reserve(request->pixels.size());
+    for (const auto &pix : request->pixels)
+    {
+      cv::Point3f p = camera_->get3DPoint(
+          latest_depth_frame_, cv::Point2f(pix.x, pix.y));
+      geometry_msgs::msg::Point pt;
+      pt.x = p.x;
+      pt.y = p.y;
+      pt.z = p.z;
+      response->points.push_back(pt);
+      if (p.z > 0.0f)
+      {
+        ++valid;
+      }
+    }
+    response->valid_count = valid;
+  }
   void cameraLoop()
   {
     RS_D435i camera(color_width_, color_height_, depth_width_, depth_height_, fps_);
     camera.init();
+
+    // 让服务回调能访问相机实例与最新深度帧
+    {
+      std::lock_guard<std::mutex> lock(camera_mutex_);
+      camera_ = &camera;
+    }
 
     const rs2_intrinsics &intrin_color = camera.getIntrinColor();
     auto color_info = buildCameraInfo(intrin_color, color_frame_id_);
@@ -89,6 +139,12 @@ private:
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Waiting for valid D435i frames.");
         rate.sleep();
         continue;
+      }
+
+      // 保存最新深度帧供服务回调使用 (get3DPoint 需要 rs2::depth_frame)
+      {
+        std::lock_guard<std::mutex> lock(camera_mutex_);
+        latest_depth_frame_ = depth_frame;
       }
 
       const auto stamp = now();
@@ -184,11 +240,18 @@ private:
   std::string color_camera_info_topic_;
   std::string color_frame_id_;
   std::string depth_frame_id_;
+  std::string get_3d_points_service_;
 
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr rgb_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_color_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr color_info_pub_;
+  rclcpp::Service<demo_msgs::srv::Get3DPoints>::SharedPtr get_3d_points_srv_;
+
+  // 相机实例与最新深度帧 (由 cameraLoop 写入, 服务回调读取)
+  std::mutex camera_mutex_;
+  RS_D435i *camera_ = nullptr;
+  rs2::depth_frame latest_depth_frame_{nullptr};
 
   std::thread camera_thread_;
   std::atomic<bool> running_{false};

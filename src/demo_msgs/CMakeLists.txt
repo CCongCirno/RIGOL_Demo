@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetPose.msg"
   "msg/TrackCmd.msg"
   "msg/PoseGoal.msg"
+  "srv/Get3DPoints.srv"
   DEPENDENCIES geometry_msgs builtin_interfaces
 )
 

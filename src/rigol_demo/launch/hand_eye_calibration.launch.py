@@ -38,10 +38,7 @@ def generate_launch_description():
             'board_height': 8,
             'square_size': 0.020,
             'use_custom_camera_matrix': True,
-            'fx': 891.773183,
-            'fy': 893.753426,
-            'cx': 628.465114,
-            'cy': 353.375401,
+            # 相机内参从 config_file (hand_eye_calibration.yaml) 读取,此处不硬编码
             'min_samples': 5,
             'max_samples': 20,
             'hand_eye_method': 1,
