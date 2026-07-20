@@ -95,16 +95,44 @@ target_link_libraries(d435i_image_test
 add_executable(d435i_data_publisher_node src/module/d435i_data_publisher_node.cpp)
 set_target_properties(d435i_data_publisher_node PROPERTIES
     BUILD_RPATH "$ORIGIN"
-    INSTALL_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN;$ORIGIN/../../../demo_msgs/lib;$ORIGIN/../../../piper_msgs/lib"
 )
 ament_target_dependencies(d435i_data_publisher_node
   rclcpp
   sensor_msgs
+  demo_msgs
 )
 target_link_libraries(d435i_data_publisher_node
   ${RS_DEPENDENCIES}
   ${DEMO_LIBS}
   ${OpenCV_LIBS}
+)
+
+# 轨迹绘制节点:全屏画布鼠标绘制 -> 重投影到深度相机 -> 发布 TrackCmd
+add_executable(trajectory_draw_node src/module/trajectory_draw_node.cpp)
+set_target_properties(trajectory_draw_node PROPERTIES
+    BUILD_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN;$ORIGIN/../../../demo_msgs/lib;$ORIGIN/../../../piper_msgs/lib"
+)
+ament_target_dependencies(trajectory_draw_node
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  std_msgs
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+  demo_msgs
+  piper_msgs
+  cv_bridge
+  ament_index_cpp
+)
+target_include_directories(trajectory_draw_node PRIVATE
+  ${EIGEN3_INCLUDE_DIRS}
+)
+target_link_libraries(trajectory_draw_node
+  ${OpenCV_LIBS}
+  yaml-cpp
 )
 
 # 手眼标定节点 (眼在手上, 预标定 + 正式标定)
@@ -141,6 +169,7 @@ install(TARGETS
   d435i_image_test
   d435i_data_publisher_node
   hand_eye_calibration_node
+  trajectory_draw_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
