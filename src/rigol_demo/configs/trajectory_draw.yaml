@@ -1,0 +1,83 @@
+# ============================================================
+# 轨迹绘制节点配置文件
+# 全屏白色画布 -> 鼠标绘制轨迹 -> 重投影到深度相机 -> 机械臂绘制
+# ============================================================
+
+# ---------- 话题配置 ----------
+rgb_topic: "/camera/rgb/image_raw"
+depth_topic: "/camera/depth/image_raw"
+camera_info_topic: "/camera/rgb/camera_info"
+arm_status_topic: "/arm_status"
+track_cmd_topic: "/track_cmd"
+target_pose_topic: "/target_pose"
+# 3D 点反投影服务 (由 d435i_data_publisher_node 提供, 使用 RS_D435i::get3DPoint)
+get_3d_points_service: "/camera/get_3d_points"
+
+# ---------- TF 配置 ----------
+base_frame: "base_link"
+ee_frame: "link6"
+camera_frame: "camera_color_optical_frame"
+
+# ---------- 画布配置 ----------
+canvas_width: 1280
+canvas_height: 720
+canvas_window: "Trajectory Canvas (ENTER to confirm)"
+brush_thickness: 3
+
+# ---------- 轨迹离散化 ----------
+# 画布上相邻离散点的像素间隔(越小点越密)
+sample_step_px: 8.0
+# 绘制高度偏移(相对屏幕表面,正值抬离屏幕)
+z_offset: 0.0
+# 绘制时距离屏幕表面的高度(m),避免笔尖碰撞屏幕
+z_draw_height: 0.005
+
+# ---------- 工具中心点(TCP) ----------
+# 机械臂末端法兰向外的工具长度(m),轨迹点沿屏幕法线偏移该值使工具尖端点触屏幕
+tool_offset: 0.065
+# 是否使用屏幕平面拟合姿态
+#   true:  由预选画布点(4角点+4边中点+1中心)重投影+深度拟合平面,计算工具垂直于屏幕的姿态
+#   false: 使用固定 pitch=pi 朝下姿态
+use_screen_plane_pose: true
+# 是否使用与 home 一致的姿态(相机系 RPY=(0,π/2,0),末端 Z 轴朝前)
+#   true:  直接用 home 姿态,避免屏幕平面拟合的 RPY 多值性问题,确保 OMPL 可求解
+#   false: 使用 use_screen_plane_pose 的结果(计算出的屏幕平面拟合姿态)
+use_home_orientation: false
+# 是否将路径点投影到拟合的屏幕平面上(消除深度噪声,确保所有路径点共面)
+#   true:  用预选点拟合的屏幕平面(法向量+中心),将每个路径点沿法线方向投影到平面上
+#   false: 使用原始深度反投影 3D 点(各点深度有噪声,不在严格同一平面)
+project_points_to_plane: true
+
+# ---------- 颜色梯度分割参数 ----------
+# 分割可视化调参开关 (true: 显示分割中间结果,便于调参; false: 关闭)
+enable_segmentation_debug: false
+# 确认轨迹时是否显示 "Reprojected Trajectory on RGB" 和 "Screen Warped to Canvas" 窗口
+# (true: 显示; false: 关闭,默认关闭以减少窗口干扰)
+show_reproject_windows: false
+# Canny 边缘检测阈值
+canny_low: 87
+canny_high: 116
+# 形态学闭操作核大小
+morph_kernel: 5
+# 屏幕区域面积约束 (占图像总面积的比例)
+area_min_ratio: 0.58
+area_max_ratio: 0.95
+# 多边形逼近精度 (周长比例)
+quad_approx_eps: 0.017
+
+# ---------- 深度处理 ----------
+# 深度图中值滤波核大小 (奇数, 1 表示不滤波)
+depth_median_kernel: 5
+# 深度无效时邻域平均半径
+depth_invalid_radius: 3
+
+# ---------- 手眼标定结果 ----------
+hand_eye_result_file: "hand_eye_result.yaml"
+
+# ---------- 相机内参 ----------
+# 若 use_custom_camera_matrix=true 则使用下方内参,否则从 camera_info 话题读取
+use_custom_camera_matrix: true
+fx: 904.828258
+fy: 903.437855
+cx: 642.233283
+cy: 353.013553
