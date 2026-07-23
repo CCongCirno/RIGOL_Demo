@@ -80,6 +80,13 @@ Interface can0 is connected to USB port 3-1.4:1.0
 bash can_activate.sh can0 1000000
 ```
 
+## 启动相机数据发布节点
+
+```bash
+source install/setup.bash
+ros2 launch rigol_demo d435i_data_publisher.launch.py
+```
+
 ## 轨迹绘制节点运行
 
 轨迹绘制节点使用 `trajectory_draw.launch.py` 启动，默认会加载 `src/rigol_demo/configs/trajectory_draw.yaml`。
@@ -158,10 +165,12 @@ ros2 launch rigol_demo moveit_pose_goal.launch.py
 
 ## 运行顺序建议
 
-1. 启动 ROS 2 环境：`source /opt/ros/humble/setup.bash`
-2. 编译并加载工作区：`source install/setup.bash`
-3. 启动 `trajectory_draw.launch.py` 进行轨迹绘制
-4. 在新的终端启动 `piper_control.launch.py` 执行轨迹控制
+1. 启动CAN模块 `can_activate.sh`
+2. 启动 ROS 2 环境：`source /opt/ros/humble/setup.bash`
+3. 编译并加载工作区：`source install/setup.bash`
+4. 启动  `d435i_data_publisher.launch.py` 相机数据发布节点
+5. 启动 `trajectory_draw.launch.py` 进行轨迹绘制
+6. 在新的终端启动 `piper_control.launch.py` 执行轨迹控制
 
 ## 备注
 
